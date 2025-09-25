@@ -1,11 +1,14 @@
 # model_loader.py
 import torch
+from utils.create_model import InefficientModel
 
-def load_model(path="inefficient_model.pt", device="cuda" if torch.cuda.is_available() else "cpu"):
+def load_model(path="model/inefficient_model.pt", device="cuda" if torch.cuda.is_available() else "cpu"):
     """
     Load the pre-trained PyTorch model from file.
     This is done once at startup for efficiency.
     """
-    model = torch.load(path, map_location=torch.device(device))
-    model.eval()  # set model to evaluation mode
+    model = InefficientModel(in_dim=3)
+    state_dict = torch.load(path, map_location=torch.device(device), weights_only=False)
+    model.load_state_dict(state_dict)
+    model.eval()
     return model
