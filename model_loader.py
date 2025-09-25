@@ -8,7 +8,13 @@ def load_model(path="model/inefficient_model.pt", device="cuda" if torch.cuda.is
     This is done once at startup for efficiency.
     """
     model = InefficientModel(in_dim=3)
-    state_dict = torch.load(path, map_location=torch.device(device), weights_only=False)
+    state_dict = torch.load(path, map_location=torch.device(device))
     model.load_state_dict(state_dict)
+    model.to(device)
     model.eval()
     return model
+
+if __name__ == "__main__":
+    model = load_model()
+    print(f"Model output {model(torch.randn(1, 3).to('cuda'))}")
+    print("Model loaded successfully.")
