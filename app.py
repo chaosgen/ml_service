@@ -66,6 +66,7 @@ class MLService:
             "status": "ok",
             "event_count": self.event_count,
             "users_tracked": self.store.num_users(),
+            "median_of_medians": self.store.median_of_medians(),
         }
 
     async def get_user_median(self, user_id: str):

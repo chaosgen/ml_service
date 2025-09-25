@@ -43,3 +43,13 @@ class RollingMedianStore:
         """
         return len(self.data)
     
+    def median_of_median(self):
+        """
+        Return the median of all users' rolling medians.
+        If no users, return None.
+        """
+        medians = [self.median(user_id) for user_id in self.data if self.median(user_id) is not None]
+        if not medians:
+            return None
+        return statistics.median(medians)
+    
