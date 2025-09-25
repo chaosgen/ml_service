@@ -32,21 +32,32 @@ class MLService:
         self.app.get("/stats")(self.get_stats)
         self.app.get("/users/{user_id}/median")(self.get_user_median)
 
-    async def ingest(self, request: Request):
+    async def ingest(self, request: Request, batch_size: int = 64):
+        buffer = []
         async for line in request.stream():
-            if line:
-                e = json.loads(line)
-                with self.lock:
-                    try:
-                        features = torch.tensor(e["features"], dtype=torch.float32).to(self.device)
-                        with torch.no_grad():
-                            score = self.model(features).item()
-                        self.store.add(e["user_id"], score, e["timestamp"])
-                        self.event_count += 1
-                    except Exception as ex:
-                        print(f"Error processing event {e}: {ex}")
-
+            if not line:
+                continue
+            e = json.loads(line)
+            buffer += e['events']  # assuming one event per line
+            if len(buffer) >= batch_size:
+                await self._process_batch(buffer)
+                buffer = []
+        # flush leftovers
+        if buffer:
+            await self._process_batch(buffer)
         return {"status": "ok", "count": self.event_count}
+    
+    async def _process_batch(self, events):
+        features_batch = torch.tensor([e["features"] for e in events],
+                                    dtype=torch.float32).to(self.device)
+        user_ids = [e["user_id"] for e in events]
+        timestamps = [e["timestamp"] for e in events]
+        with torch.no_grad():
+            scores = self.model(features_batch).detach().cpu().numpy()
+        with self.lock:
+            for uid, ts, score in zip(user_ids, timestamps, scores):
+                self.store.add(uid, float(score), ts)
+                self.event_count += 1
 
     async def get_stats(self):
         return {
