@@ -6,7 +6,6 @@ from model_loader import load_model
 from median_store import RollingMedianStore
 from utils.create_model import InefficientModel
 
-import threading
 import json
 
 class MLService:
@@ -24,8 +23,6 @@ class MLService:
         self.model = load_model()
         self.store = RollingMedianStore()
         self.event_count = 0
-
-        self.lock = threading.Lock()
 
         # Register routes
         self.app.post("/ingest")(self.ingest)
@@ -54,10 +51,9 @@ class MLService:
         timestamps = [e["timestamp"] for e in events]
         with torch.no_grad():
             scores = self.model(features_batch).detach().cpu().numpy()
-        with self.lock:
-            for uid, ts, score in zip(user_ids, timestamps, scores):
-                self.store.add(uid, float(score), ts)
-                self.event_count += 1
+        for uid, ts, score in zip(user_ids, timestamps, scores):
+            self.store.add(uid, float(score), ts)
+            self.event_count += 1
 
     async def get_stats(self):
         return {
