@@ -79,8 +79,18 @@ class MLService:
         median_value = self.store.median(user_id)
         return {"user_id": user_id, "median": median_value}
     
-    async def get_user_history(self, user_id: str, since: int = Query(int), until: int = Query(int)):
-        """ Return the full historical scores for a user. """
+    async def get_user_history(
+        self,
+        user_id: str,
+        since: int | None = Query(None, description="Only return events with timestamp >= since"),
+        until: int | None = Query(None, description="Only return events with timestamp <= until")
+    ):
+        """
+        Return the full historical scores for a user.
+        Optional query params:
+            since: filter events with timestamp >= since
+            until: filter events with timestamp <= until
+        """
         rows = self.store.db.get_user_history(user_id, since, until)
         return {
             "user_id": user_id,
