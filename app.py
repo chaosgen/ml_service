@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 import torch
@@ -10,6 +10,7 @@ import json
 
 class MLService:
     def __init__(self):
+        """ Initialize the ML service with model, data store, and FastAPI app. """
         self.app = FastAPI()
         self.app.add_middleware(
             CORSMiddleware,
@@ -29,8 +30,10 @@ class MLService:
         self.app.post("/ingest")(self.ingest)
         self.app.get("/stats")(self.get_stats)
         self.app.get("/users/{user_id}/median")(self.get_user_median)
+        self.app.get("/users/{user_id}/history")(self.get_user_history)
 
     async def ingest(self, request: Request, batch_size: int = 64):
+        """ Ingest a stream of events, process in batches. """
         buffer = []
         async for line in request.stream():
             if not line:
@@ -49,6 +52,7 @@ class MLService:
         return {"status": "ok", "count": self.event_count}
     
     async def _process_batch(self, events):
+        """ Process a batch of events: run model inference and update rolling medians. """
         features_batch = torch.tensor([e["features"] for e in events],
                                     dtype=torch.float32).to(self.device)
         user_ids = [e["user_id"] for e in events]
@@ -62,6 +66,7 @@ class MLService:
             self.event_count += 1
 
     async def get_stats(self):
+        """ Return overall stats about the service. """
         return {
             "status": "ok",
             "event_count": self.event_count,
@@ -70,8 +75,17 @@ class MLService:
         }
 
     async def get_user_median(self, user_id: str):
+        """ Return the rolling median for a user. """
         median_value = self.store.median(user_id)
         return {"user_id": user_id, "median": median_value}
+    
+    async def get_user_history(self, user_id: str, since: int = Query(int), until: int = Query(int)):
+        """ Return the full historical scores for a user. """
+        rows = self.store.db.get_user_history(user_id, since, until)
+        return {
+            "user_id": user_id,
+            "history": [{"timestamp": ts, "score": s} for ts, s in rows]
+        }
 
 # Instantiate the service and expose the FastAPI app
 ml_service = MLService()
