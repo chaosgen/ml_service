@@ -2,8 +2,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 import torch
-from model_loader import load_model
-from median_store import RollingMedianStore
+from utils.model_loader import load_model
+from utils.median_store import RollingMedianStore
 from utils.create_model import InefficientModel
 
 import json
@@ -20,8 +20,9 @@ class MLService:
         )
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = InefficientModel(in_dim=3).to(self.device)
-        self.model = load_model()
-        self.store = RollingMedianStore()
+        self.model = load_model(device=self.device)
+        
+        self.store = RollingMedianStore(window_sec=300, db_path="events.db")
         self.event_count = 0
 
         # Register routes
@@ -34,14 +35,17 @@ class MLService:
         async for line in request.stream():
             if not line:
                 continue
+
             e = json.loads(line)
             buffer += e['events']  # assuming one event per line
             if len(buffer) >= batch_size:
                 await self._process_batch(buffer)
                 buffer = []
+
         # flush leftovers
         if buffer:
             await self._process_batch(buffer)
+
         return {"status": "ok", "count": self.event_count}
     
     async def _process_batch(self, events):
@@ -49,8 +53,10 @@ class MLService:
                                     dtype=torch.float32).to(self.device)
         user_ids = [e["user_id"] for e in events]
         timestamps = [e["timestamp"] for e in events]
+        
         with torch.no_grad():
             scores = self.model(features_batch).detach().cpu().numpy()
+
         for uid, ts, score in zip(user_ids, timestamps, scores):
             self.store.add(uid, float(score), ts)
             self.event_count += 1

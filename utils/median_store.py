@@ -3,14 +3,17 @@ from bisect import insort
 import statistics
 from collections import defaultdict
 
+from db.events import EventDB
+
 class RollingMedianStore:
-    def __init__(self, window_sec=300):
+    def __init__(self, window_sec=300, db_path="events.db"):
         """
         window_sec = time window in seconds (default = 5 minutes)
         data = dictionary where each key is a user_id and value is a deque of (timestamp, score)
         """
         self.data = defaultdict(list)
         self.window_sec = window_sec
+        self.db = EventDB(db_path=db_path)
 
     def add(self, user_id, score, timestamp):
         """
@@ -24,16 +27,19 @@ class RollingMedianStore:
             idx += 1
         self.data[user_id] = self.data[user_id][idx:]
 
+        self.db.insert({"user_id": user_id, "timestamp": timestamp, "score": score})
+
     def median(self, user_id):
         """
         Return the rolling median for a user.
         If no data, return None.
         """
         scores = [s for _, s in self.data.get(user_id, [])]
-        return statistics.median(scores) if scores else None
+        return statistics.median(scores)
 
     def num_users(self):
         """
         Return how many unique users are tracked.
         """
         return len(self.data)
+    

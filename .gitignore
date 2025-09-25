@@ -208,3 +208,4 @@ __marimo__/
 
 # Model director
 model/
+events.db
