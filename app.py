@@ -5,65 +5,54 @@ from model_loader import load_model
 from median_store import RollingMedianStore
 from utils.create_model import InefficientModel
 
-app = FastAPI()
+class MLService:
+    def __init__(self):
+        self.app = FastAPI()
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = InefficientModel(in_dim=3).to(self.device)
+        self.model = load_model()
+        self.store = RollingMedianStore()
+        self.event_count = 0
 
-# Middleware for CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+        # Register routes
+        self.app.post("/ingest")(self.ingest)
+        self.app.get("/stats")(self.get_stats)
+        self.app.get("/users/{user_id}/median")(self.get_user_median)
 
-# Device setup
-device = "cuda" if torch.cuda.is_available() else "cpu"
+    async def ingest(self, request: Request):
+        payload = await request.json()
+        events = payload.get("events", [])
 
-# Load model ONCE
-model = InefficientModel(in_dim=3).to(device)
-model = load_model()
+        for e in events:
+            try:
+                features = torch.tensor(e["features"], dtype=torch.float32).to(self.device)
+                with torch.no_grad():
+                    score = self.model(features).item()
+                self.store.add(e["user_id"], score, e["timestamp"])
+                self.event_count += 1
+            except Exception as ex:
+                print(f"Error processing event {e}: {ex}")
 
-# Init store
-store = RollingMedianStore()
-event_count = 0  # track how many events processed
+        return {"status": "ok", "count": len(events)}
 
-@app.post("/ingest")
-async def ingest(request: Request):
-    """
-    Ingest a batch of events.
-    Each event has: {user_id, timestamp, features}
-    """
-    global event_count
-    payload = await request.json()
-    events = payload.get("events", [])
+    async def get_stats(self):
+        return {
+            "status": "ok",
+            "event_count": self.event_count,
+            "users_tracked": self.store.num_users(),
+        }
 
-    for e in events:
-        try:
-            # Convert features to tensor on correct device
-            features = torch.tensor(e["features"], dtype=torch.float32).to(device)
+    async def get_user_median(self, user_id: str):
+        median_value = self.store.median(user_id)
+        return {"user_id": user_id, "median": median_value}
 
-            # Run inference
-            with torch.no_grad():
-                score = model(features).item()
-
-            # Store the result
-            store.add(e["user_id"], score, e["timestamp"])
-            event_count += 1
-
-        except Exception as ex:
-            print(f"Error processing event {e}: {ex}")
-
-    return {"status": "ok", "count": len(events)}
-
-@app.get("/stats")
-async def get_stats():
-    return {
-        "status": "ok",
-        "event_count": event_count,
-        "users_tracked": store.num_users(),
-    }
-
-@app.get("/users/{user_id}/median")
-async def get_user_median(user_id: str):
-    median_value = store.median(user_id)
-    return {"user_id": user_id, "median": median_value}
+# Instantiate the service and expose the FastAPI app
+ml_service = MLService()
+app = ml_service.app
