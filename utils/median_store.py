@@ -27,7 +27,7 @@ class RollingMedianStore:
             idx += 1
         self.data[user_id] = self.data[user_id][idx:]
 
-        self.db.insert({"user_id": user_id, "timestamp": timestamp, "score": score})
+        self.db.insert(user_id, timestamp, score)
 
     def median(self, user_id):
         """
@@ -35,6 +35,8 @@ class RollingMedianStore:
         If no data, return None.
         """
         scores = [s for _, s in self.data.get(user_id, [])]
+        if not scores:
+            return None
         return statistics.median(scores)
 
     def num_users(self):
@@ -43,7 +45,7 @@ class RollingMedianStore:
         """
         return len(self.data)
     
-    def median_of_median(self):
+    def median_of_medians(self):
         """
         Return the median of all users' rolling medians.
         If no users, return None.
