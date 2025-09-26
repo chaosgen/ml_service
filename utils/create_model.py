@@ -1,5 +1,6 @@
 # create_model.py
 import torch
+import os
 import torch.nn as nn
 
 class InefficientModel(nn.Module):
@@ -23,5 +24,6 @@ if __name__ == "__main__":
     with torch.no_grad():
         for p in model.parameters():
             p.uniform_(-0.1, 0.1)
+    os.makedirs("model", exist_ok=True)
     torch.save(model.state_dict(), "model/inefficient_model.pt")
     print("Saved inefficient_model.pt")

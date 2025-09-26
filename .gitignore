@@ -209,3 +209,4 @@ __marimo__/
 # Model director
 model/
 events.db
+events.db-journal
