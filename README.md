@@ -55,13 +55,13 @@ It’s designed to be **scalable**, **easy to deploy**, and **profilable** for p
 
 ### Key Design Choices
 
-* **Async Streaming Ingestion**: The `/ingest` endpoint reads the request body line by line, buffering events and processing them in **batches** (default batch size = 64).
+* **Async Streaming Ingestion**: The `/ingest` endpoint reads the request body line by line, buffering events and processing them in **batches** (default batch size = 256).
 * **Batch Model Inference**: Converts event features into a tensor and runs **vectorized inference** to maximize GPU/CPU efficiency.
-* **Out-of-Order Events**: Uses `bisect.insort` to keep user event lists sorted by timestamp even when late events arrive.
+* **Out-of-Order Events**: Uses a **heap-based structure** to keep per-user events efficiently ordered by timestamp, even when late events arrive.
 * **Rolling Median**: Maintains a **5-minute sliding window** for each user and computes the median efficiently.
 * **Persistence**: All processed events are stored in a **SQLite database (`events.db`)** for long-term querying.
 * **Statistics**: Provides **median of medians** for overall service health monitoring.
-* **Profiling Ready**: Designed to run with `pyinstrument` or `cProfile` for performance debugging.
+* **Profiling Ready**: Designed to run with `line_profiler` for performance debugging.
 
 ---
 
@@ -109,7 +109,7 @@ gunicorn -k uvicorn.workers.UvicornWorker -w 4 app:app
 
 ### **POST /ingest**
 
-Ingest a stream of events. Accepts **streamed JSON lines** or batched JSON objects.
+Ingest a stream of events. Accepts **batched JSON objects (streamed asynchronously)** or batched JSON objects.
 
 ```json
 {"events": [
@@ -118,7 +118,7 @@ Ingest a stream of events. Accepts **streamed JSON lines** or batched JSON objec
 ]}
 ```
 
-* The service buffers events (default `batch_size=64`) and runs batched model inference.
+* The service buffers events (default `batch_size=256`) and runs batched model inference.
 
 ---
 
@@ -257,6 +257,6 @@ docker run -p 8000:8000 ml-service
 
 * **Async streaming** allows ingesting very high event rates.
 * **Batch inference** reduces PyTorch overhead.
-* **Out-of-order safe**: `bisect.insort` keeps per-user events sorted.
+* **Out-of-order safe**: heap-based structure
 * **Median calculation**: efficient for rolling window; can be swapped for heap-based if needed.
 * **Persistence**: SQLite is simple; for huge loads consider Postgres or a message queue (Kafka).
