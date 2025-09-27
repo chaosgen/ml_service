@@ -1,6 +1,8 @@
 import sqlite3
 import os
 
+from line_profiler import profile
+
 class EventDB:
     def __init__(self, db_path="events.db"):
         """ Initialize the database connection and create schema if needed. """
@@ -9,6 +11,8 @@ class EventDB:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         if init_new:
             self._create_schema()
+        
+        self.records = []  # buffer for batch inserts
 
     def _create_schema(self):
         """ Create the events table if it doesn't exist. """
@@ -22,14 +26,20 @@ class EventDB:
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_ts ON events(user_id, timestamp)")
         self.conn.commit()
-        
-    def insert(self, user_id, timestamp, score):
-        """ Insert a new event into the database. """
-        self.conn.execute(
+
+    def commit_records(self):
+        """ Insert a batch of records into the database. """
+        self.conn.executemany(
             "INSERT INTO events (user_id, timestamp, score) VALUES (?, ?, ?)",
-            (user_id, timestamp, score)
+            self.records
         )
         self.conn.commit()
+
+    @profile
+    def insert_batch(self, user_ids, timestamps, scores):
+        self.records.append(list(zip(user_ids, timestamps, scores)))
+        if len(self.records) >= 100000:
+            self.commit_records()
 
     def get_recent_events(self, user_id=None, since_ts=None):
         """ Return events filtered by user_id and/or since timestamp. """
