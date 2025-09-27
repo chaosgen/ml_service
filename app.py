@@ -2,9 +2,13 @@ from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 import torch
+import uvicorn
 from utils.model_loader import load_model
 from utils.median_store import RollingMedianStore
 from utils.create_model import InefficientModel
+
+from line_profiler import profile
+import numpy as np
 
 import json
 
@@ -32,7 +36,7 @@ class MLService:
         self.app.get("/users/{user_id}/median")(self.get_user_median)
         self.app.get("/users/{user_id}/history")(self.get_user_history)
 
-    async def ingest(self, request: Request, batch_size: int = 64):
+    async def ingest(self, request: Request, batch_size: int = 256):
         """ Ingest a stream of events, process in batches. """
         buffer = []
         async for line in request.stream():
@@ -51,6 +55,7 @@ class MLService:
 
         return {"status": "ok", "count": self.event_count}
     
+    @profile
     async def _process_batch(self, events):
         """ Process a batch of events: run model inference and update rolling medians. """
         features_batch = torch.tensor([e["features"] for e in events],
@@ -59,11 +64,10 @@ class MLService:
         timestamps = [e["timestamp"] for e in events]
         
         with torch.no_grad():
-            scores = self.model(features_batch).detach().cpu().numpy()
+            scores = np.fromiter(self.model(features_batch).detach().cpu().numpy(), dtype=float)
 
-        for uid, ts, score in zip(user_ids, timestamps, scores):
-            self.store.add(uid, float(score), ts)
-            self.event_count += 1
+        self.store.add(user_ids, scores, timestamps)
+        self.event_count += len(user_ids)
 
     async def get_stats(self):
         """ Return overall stats about the service. """
@@ -100,3 +104,5 @@ class MLService:
 # Instantiate the service and expose the FastAPI app
 ml_service = MLService()
 app = ml_service.app
+
+uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -3,6 +3,8 @@ from bisect import insort
 import statistics
 from collections import defaultdict
 
+from line_profiler import profile
+
 from db.events import EventDB
 
 class RollingMedianStore:
@@ -15,19 +17,21 @@ class RollingMedianStore:
         self.window_sec = window_sec
         self.db = EventDB(db_path=db_path)
 
-    def add(self, user_id, score, timestamp):
+    @profile
+    def add(self, user_ids, scores, timestamps):
         """
         Add a new score for a user at a given timestamp.
         """
-        insort(self.data[user_id], (timestamp, score))
+        for user_id, score, timestamp in zip(user_ids, scores, timestamps):
+            insort(self.data[user_id], (timestamp, score))
 
-        # Remove old entries outside the 5-minute window
-        idx = 0
-        while idx < len(self.data[user_id]) and self.data[user_id][idx][0] < timestamp - self.window_sec:
-            idx += 1
-        self.data[user_id] = self.data[user_id][idx:]
+            # Remove old entries outside the 5-minute window
+            idx = 0
+            while idx < len(self.data[user_id]) and self.data[user_id][idx][0] < timestamp - self.window_sec:
+                idx += 1
+            self.data[user_id] = self.data[user_id][idx:]
 
-        self.db.insert(user_id, timestamp, score)
+        self.db.insert_batch(user_ids, timestamps, scores)
 
     def median(self, user_id):
         """
@@ -37,7 +41,7 @@ class RollingMedianStore:
         scores = [s for _, s in self.data.get(user_id, [])]
         if not scores:
             return None
-        return statistics.median(scores)
+        return scores[(len(scores) - 1) // 2]
 
     def num_users(self):
         """
