@@ -3,3 +3,4 @@ torch
 numpy
 uvicorn
 requests
+line_profiler
